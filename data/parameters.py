@@ -1,11 +1,12 @@
 import os, glob
 import torch
-scale_factor=2**1
-IMAGE_HEIGHT = 10 #342
-IMAGE_WIDTH = 20 #2270
+
+scale_factor = 2 ** 1
+IMAGE_HEIGHT = 10  # 342
+IMAGE_WIDTH = 20  # 2270
 # device = torch.device("cuda" if torch.cu+2
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#device = "cpu"
+# device = "cpu"
 batch_size = 2
 num_example = 1
 embedding_size = 64

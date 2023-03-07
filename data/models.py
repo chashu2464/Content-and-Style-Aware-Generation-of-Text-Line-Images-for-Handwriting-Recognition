@@ -37,21 +37,19 @@ class Visual_encoder(nn.Module):
         self.conv5 = nn.Conv2d(
             in_channels=128, out_channels=32, kernel_size=3, stride=1, padding=1
         )
-     
-        self.upsample1 = nn.Upsample(scale_factor=2, mode='nearest')
+
+        self.upsample1 = nn.Upsample(scale_factor=2, mode="nearest")
         # self.upsample2 = nn.Upsample(scale_factor=2, mode='nearest')
         # self.upsample3 = nn.Upsample(scale_factor=2, mode='nearest')
 
-
-
     def forward(self, x):
-        print("Shape of the Input in VGG network:-",x.shape)
+        print("Shape of the Input in VGG network:-", x.shape)
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)
         x = self.conv5(x)
-        x=self.upsample1(x)
+        x = self.upsample1(x)
         # x=self.upsample2(x)
         # x=self.upsample3(x)
         return x
@@ -109,5 +107,3 @@ class TextEncoder_FC(nn.Module):
         final_res = torch.cat([res] * height_reps, dim=2)
 
         return out, final_res
-
-

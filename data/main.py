@@ -5,7 +5,8 @@ from parameters import *
 from data_set import CustomImageDataset
 import matplotlib.pyplot as plt
 from loss import CER
-#from models import Visual_encoder, TextEncoder_FC
+
+# from models import Visual_encoder, TextEncoder_FC
 from helper import pad_str, decoding
 from torch import optim
 import numpy as np
@@ -213,23 +214,18 @@ if __name__ == "__main__":
     dataset = torch.utils.data.DataLoader(
         TextDatasetObj, batch_size=batch_size, shuffle=True, num_workers=no_workers,
     )
-    net=Encoder().to(device)
-  
+    net = Encoder().to(device)
+
     trainable_parameter = sum(
-	param.numel() for param in net.parameters() if param.requires_grad
+        param.numel() for param in net.parameters() if param.requires_grad
     )
-    
 
     print(f" Total parameters = {trainable_parameter/ 1e6:.2f} .Millions")
     for Image, Label in tqdm.tqdm(dataset):
-        
+
         V_out = net(Image[0].to(device).unsqueeze(1))
-        
+
         break
-    
-
-
-
 
     # train_size = int(0.8 * (len(dataset)))
     # test_size = len(dataset) - train_size
