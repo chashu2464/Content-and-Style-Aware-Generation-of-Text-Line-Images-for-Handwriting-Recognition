@@ -21,7 +21,7 @@ class Head(nn.Module):
         # x shape: [batch_size, num_channels, image_height, image_width]
         batch, channel, high, width = x.shape
         # Reshape input to [batch_size, num_channels*image_height, image_width]
-        x = x.view(x.size(0), -1, x.size(1))
+        x = x.reshape(x.size(0), -1, x.size(1))
 
         # Compute Q, K, V matrices for each head
         q = self.wq(x)  # q shape: [batch_size, num_channels*image_height, d_model]

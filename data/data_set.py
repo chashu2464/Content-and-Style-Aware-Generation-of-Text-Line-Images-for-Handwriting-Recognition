@@ -65,7 +65,7 @@ class CustomImageDataset:
             Images.append(torch.tensor(Img, device=device).float())
             # Images.append(torch.nn.functional.pad(tensor, (0, self.IMAGE_WIDTH - tensor.size(2), 0, self.IMAGE_HEIGHT - tensor.size(1))))
             Labels.append(lbl)
-        concate_image = torch.stack(Images, 0)
+        concate_image = torch.cat(Images, 1)
         """if self.transform:
             image = self.transform(image)
         if self.target_transform:

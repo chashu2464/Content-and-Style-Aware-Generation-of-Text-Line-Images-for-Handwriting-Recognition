@@ -58,6 +58,15 @@ class Visual_encoder(nn.Module):
 class TextEncoder_FC(nn.Module):
     def __init__(self) -> None:
         super(TextEncoder_FC, self).__init__()
+        """
+         self.embed = Apply the embedding layer on the text tensor(2,85) -> (batch_size,max_text_len) -> out= (batch_size,max_len,embedding_size)
+         xx = (batch_size, max_len_embedding_size)
+         xxx = reshape the embedding output  from (batch_size,max_len_text,embedding_size) -> (batch_size,max_len*embedding_size) 
+         out = Contained the output of the text style_network out_dim -> (batch_size,4096)
+
+         xx_new =  apply the Linear layer on the embedding output 
+
+        """
         self.embed = nn.Embedding(len(vocab), embedding_size)  # 81,64
         self.fc = nn.Sequential(
             nn.Flatten(),  # flatten the input tensor to a 1D tensor
@@ -67,22 +76,24 @@ class TextEncoder_FC(nn.Module):
             nn.Linear(1024, 2048),
             nn.BatchNorm1d(2048),
             nn.ReLU(inplace=False),
-            nn.Linear(2048, 4096),
+            nn.Linear(2048, 5440),
         )
-        self.linear = nn.Linear(embedding_size, 512)  # 64,512
+        self.linear = nn.Linear(embedding_size*text_max_len, embedding_size*text_max_len)  # 64,512
+        self.linear1=nn.Linear(embedding_size, embedding_size*text_max_len)  
 
     def forward(self, x):
         xx = self.embed(x)  # b,t,embed
 
-        batch_size = xx.shape[0]
+        batch_size = xx.shape[0] 
         xxx = xx.reshape(batch_size, -1)  # b,t*embed
         out = self.fc(xxx)
 
         """embed content force"""
-        xx_new = self.linear(xx)  # b, text_max_len, 512
-        ts = xx_new.shape[1]
-        height_reps = IMAGE_HEIGHT
-        width_reps = IMAGE_WIDTH // ts
+        xx_new = self.linear(xx.view(2,-1)).view(xx.size(0),xx.size(1),xx.size(2)) # b, text_max_len, 512
+
+        ts = xx_new.shape[1]   # b,512,8,27
+        height_reps = IMAGE_HEIGHT #8 [-2]
+        width_reps =  max(1,IMAGE_WIDTH// ts )            #[-2] 27
         tensor_list = list()
         for i in range(ts):
             text = [xx_new[:, i : i + 1]]  # b, text_max_len, 512
@@ -92,9 +103,9 @@ class TextEncoder_FC(nn.Module):
         padding_reps = IMAGE_WIDTH % ts
         if padding_reps:
             embedded_padding_char = self.embed(
-                torch.full((1, 1), 2, dtype=torch.long, device=device)
+                torch.full((1, 1), 2, dtype=torch.long)
             )
-            embedded_padding_char = self.linear(embedded_padding_char)
+            #embedded_padding_char = self.linear1(embedded_padding_char)
             padding = embedded_padding_char.repeat(batch_size, padding_reps, 1)
             tensor_list.append(padding)
 
@@ -105,5 +116,4 @@ class TextEncoder_FC(nn.Module):
             2
         )  # b, 512, 1, text_max_len * width_reps + padding_reps
         final_res = torch.cat([res] * height_reps, dim=2)
-
         return out, final_res

@@ -7,7 +7,7 @@ import torch.functional as F
 from attention import MultiHeadAttention
 
 # from models.vgg_tro_channel1 import vgg16_bn
-from models import Visual_encoder
+#from models import Visual_encoder
 from block import *
 
 
