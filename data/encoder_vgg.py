@@ -7,8 +7,9 @@ import torch.functional as F
 from attention import MultiHeadAttention
 
 # from models.vgg_tro_channel1 import vgg16_bn
-#from models import Visual_encoder
+from models import Visual_encoder
 from block import *
+from decoder import LayerNormLinearDropoutBlock
 
 
 class Encoder(nn.Module):
@@ -23,15 +24,28 @@ class Encoder(nn.Module):
         self.num_heads = 4
         head_size = 200
         print(f"channel:-{C=},Hight:- {H=} width:- {W=} Batch:- {B=}")
-        self.resnet = Generator_Resnet(class_num=2, num_res_blocks=2)
-        self.visual_encoder = Visual_encoder()  # vgg
-        self.layer_norm = nn.LayerNorm([W])  #
-        self.attention = MultiHeadAttention(num_heads=self.num_heads, dropout=0.4, C=C)
-        self.dropout = nn.Dropout(p=0.3)
-        # self.upsample=nn.Linear(head_size*self.num_heads,out_feature)
-        self.linear = nn.Linear(
-            in_features=W, out_features=W, bias=False
+        self.in_feature = 32 * IMAGE_HEIGHT * scale_factor * IMAGE_WIDTH * scale_factor
+        self.out_feature = 128
+        self.resnet = Generator_Resnet(class_num=2, num_res_blocks=2).to(device)
+        self.visual_encoder = Visual_encoder().to(device)  # vgg
+        self.linear_downsampling = nn.Linear(
+            in_features=self.in_feature, out_features=self.out_feature
         )
+        self.block_with_attention = LayerNormLinearDropoutBlock(
+            in_features=self.in_feature,
+            out_features=self.out_feature,
+            num_heads=2,
+            dropout_prob=0.2,
+            attention=True,
+        )
+        self.block_without_attention = LayerNormLinearDropoutBlock(
+            in_features=self.in_feature,
+            out_features=self.out_feature,
+            num_heads=2,
+            dropout_prob=0.2,
+            attention=False,
+        )
+        self.norm = nn.LayerNorm(self.out_feature)
 
     def forward(self, x):
         resent = self.resnet(x)  # resent   batch_size,outchannel,Hight , Width
@@ -43,23 +57,16 @@ class Encoder(nn.Module):
             f"Shape of the resent output{resent.shape} and Vgg output shape{visual_encder.shape}"
         )
         combained_out = resent + visual_encder  # combained before input
-
-        layer_norm = self.layer_norm(
-            combained_out
-        )  # layer_norm    batch_size features  eg 2,32,20,10 = 2,32,200
-        attention = self.attention(layer_norm)  # attention layer
-        dropout = self.dropout(attention)  # dropout layer
-        layer_norm = layer_norm.repeat(dropout.size(0) // batch_size, 1, 1, 1)
-        norm_dropout = (
-            layer_norm + dropout
-        )  # combained output of layer_norm and dropout
-        print("Shape of the norm dropout,", norm_dropout.shape)
-        layer_norm1 = self.layer_norm(norm_dropout)  # layer_norm output
-        linear = self.linear(layer_norm1.view(-1,layer_norm1.size(3)))
-        print("shape of the linear",linear.shape)
-        linear=linear.view(layer_norm1.size(0),layer_norm1.size(1),layer_norm1.size(2),layer_norm1.size(3))
-        linear_drop = self.dropout(linear)
-        norm_dropout1 = linear_drop + norm_dropout
-        final_norm = self.layer_norm(norm_dropout1)
-
+        attention_block, norm_layer = self.block_with_attention(
+            combained_out.view(combained_out.size(0), -1)
+        )
+        down_sampled_norm = self.linear_downsampling(norm_layer)
+        down_sampled_norm = down_sampled_norm.repeat(
+            attention_block.size(0) // batch_size, 1
+        )
+        combained_attention = down_sampled_norm + attention_block
+        without_attention, _ = self.block_without_attention(combained_attention)
+        combained_with_attention = combained_attention + without_attention
+        final_norm = self.norm(combained_with_attention)
+        print("End of encoder")
         return final_norm

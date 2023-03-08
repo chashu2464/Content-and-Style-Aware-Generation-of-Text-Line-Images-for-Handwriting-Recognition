@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 import numpy as np
 import cv2
-from encoder_vgg import *
+
 from seq2sqe import *
 from decoder import *
 
@@ -78,22 +78,26 @@ class TextEncoder_FC(nn.Module):
             nn.ReLU(inplace=False),
             nn.Linear(2048, 5440),
         )
-        self.linear = nn.Linear(embedding_size*text_max_len, embedding_size*text_max_len)  # 64,512
-        self.linear1=nn.Linear(embedding_size, embedding_size*text_max_len)  
+        self.linear = nn.Linear(
+            embedding_size * text_max_len, embedding_size * text_max_len
+        )  # 64,512
+        self.linear1 = nn.Linear(embedding_size, embedding_size * text_max_len)
 
     def forward(self, x):
         xx = self.embed(x)  # b,t,embed
 
-        batch_size = xx.shape[0] 
+        batch_size = xx.shape[0]
         xxx = xx.reshape(batch_size, -1)  # b,t*embed
         out = self.fc(xxx)
 
         """embed content force"""
-        xx_new = self.linear(xx.view(2,-1)).view(xx.size(0),xx.size(1),xx.size(2)) # b, text_max_len, 512
+        xx_new = self.linear(xx.view(2, -1)).view(
+            xx.size(0), xx.size(1), xx.size(2)
+        )  # b, text_max_len, 512
 
-        ts = xx_new.shape[1]   # b,512,8,27
-        height_reps = IMAGE_HEIGHT #8 [-2]
-        width_reps =  max(1,IMAGE_WIDTH// ts )            #[-2] 27
+        ts = xx_new.shape[1]  # b,512,8,27
+        height_reps = IMAGE_HEIGHT  # 8 [-2]
+        width_reps = max(1, IMAGE_WIDTH // ts)  # [-2] 27
         tensor_list = list()
         for i in range(ts):
             text = [xx_new[:, i : i + 1]]  # b, text_max_len, 512
@@ -102,10 +106,8 @@ class TextEncoder_FC(nn.Module):
 
         padding_reps = IMAGE_WIDTH % ts
         if padding_reps:
-            embedded_padding_char = self.embed(
-                torch.full((1, 1), 2, dtype=torch.long)
-            )
-            #embedded_padding_char = self.linear1(embedded_padding_char)
+            embedded_padding_char = self.embed(torch.full((1, 1), 2, dtype=torch.long,device=device))
+            # embedded_padding_char = self.linear1(embedded_padding_char)
             padding = embedded_padding_char.repeat(batch_size, padding_reps, 1)
             tensor_list.append(padding)
 
