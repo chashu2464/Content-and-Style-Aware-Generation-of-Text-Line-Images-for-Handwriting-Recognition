@@ -242,12 +242,6 @@ class ConTranModel(nn.Module):
                 cer_te2.add(pred_xt_swap, label_xt2_swap)
                 l_rec = (l_rec_ori + l_rec_swap) / 2.0
 
-
-
-
-
-                
-
                 """writer classifier loss"""
                 l_cla_ori = self.cla(xg, tr_wid)
                 l_cla_swap = self.cla(xg_swap, tr_wid)
