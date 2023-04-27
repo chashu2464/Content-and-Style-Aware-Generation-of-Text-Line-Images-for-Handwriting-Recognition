@@ -56,6 +56,7 @@ if __name__ == "__main__":
         V_out = encoder_net(Image[0].to(device).unsqueeze(1))
         T_out = decoder_net.forward(concate[0].to(device),V_out)
         break
+    
 
     # train_size = int(0.8 * (len(dataset)))
     # test_size = len(dataset) - train_size
