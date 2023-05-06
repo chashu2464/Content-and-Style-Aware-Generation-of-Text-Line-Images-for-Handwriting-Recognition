@@ -84,16 +84,15 @@ class TextEncoder_FC(nn.Module):
         self.linear1 = nn.Linear(embedding_size, embedding_size * text_max_len)
 
     def forward(self, x):
-        xx = self.embed(x)  # b,t,embed
+        xx = self.embed(x.squeeze(-1))  # b,t,embed
 
         batch_size = xx.shape[0]
         xxx = xx.reshape(batch_size, -1)  # b,t*embed
         out = self.fc(xxx)
 
         """embed content force"""
-        xx_new = self.linear(xx.view(2, -1)).view(
-            xx.size(0), xx.size(1), xx.size(2)
-        )  # b, text_max_len, 512
+        xx_new=self.linear(xx.view(2,-1)).view(xx.size(0),xx.size(1),xx.size(2),xx.size(3))
+         # b, text_max_len, 512   
 
         ts = xx_new.shape[1]  # b,512,8,27
         height_reps = IMAGE_HEIGHT  # 8 [-2]
@@ -106,16 +105,19 @@ class TextEncoder_FC(nn.Module):
 
         padding_reps = IMAGE_WIDTH % ts
         if padding_reps:
-            embedded_padding_char = self.embed(torch.full((1, 1), 2, dtype=torch.long,device=device))
+            embedded_padding_char = self.embed(
+                torch.full((1, 1), 2, dtype=torch.long, device=device)
+            )
             # embedded_padding_char = self.linear1(embedded_padding_char)
-            padding = embedded_padding_char.repeat(batch_size, padding_reps, 1)
-            tensor_list.append(padding)
 
+            padding = embedded_padding_char.repeat(batch_size, 1, 1).unsqueeze(1)
+            tensor_list.append(padding)
         res = torch.cat(
             tensor_list, dim=1
-        )  # b, text_max_len * width_reps + padding_reps, 512
-        res = res.permute(0, 2, 1).unsqueeze(
-            2
-        )  # b, 512, 1, text_max_len * width_reps + padding_reps
+        )  
+        # b, text_max_len * width_reps + padding_reps, 512
+ 
+        res = res.permute(0, 2, 1,3)
+          # b, 512, 1, text_max_len * width_reps + padding_reps
         final_res = torch.cat([res] * height_reps, dim=2)
         return out, final_res

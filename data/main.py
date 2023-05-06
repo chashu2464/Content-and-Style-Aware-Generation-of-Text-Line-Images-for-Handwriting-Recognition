@@ -10,7 +10,7 @@ from decoder import Decorder
 from encoder_vgg import Encoder
 
 # from models import Visual_encoder, TextEncoder_FC
-from helper import pad_str, decoding
+from helper import pad_str,encoding,decoding
 from torch import optim
 import numpy as np
 import time
@@ -47,16 +47,16 @@ if __name__ == "__main__":
         f" Encoder parameters = {trainable_parameter/ 1e6:.2f}.Millions \n Decoder paramters ={trainable_parameter/ 1e6:.2f}. Millions"
     )
     for Image, Label in tqdm.tqdm(dataset):
-        label = pad_str(Label)
+        label = pad_str(Label[0])
         print(f"{len(label)=} {len(label[0][0])=}")
-        Str2Index = decoding(label=label, decoder=encoder)
+        Str2Index = encoding(label=label, decoder=encoder)
         concate = torch.stack(Str2Index, dim=0)
 
-        print(f"{concate[0].shape}")
-        V_out = encoder_net(Image[0].to(device).unsqueeze(1))
-        T_out = decoder_net.forward(concate[0].to(device),V_out)
+        print(f"Shape of the labels:- {concate[0].shape}")
+        print(f"Shape of the Image:- ",Image.shape)
+        V_out = encoder_net(Image.to(device).unsqueeze(1))
+        T_out = decoder_net.forward(concate.to(device), V_out)
         break
-    
 
     # train_size = int(0.8 * (len(dataset)))
     # test_size = len(dataset) - train_size
