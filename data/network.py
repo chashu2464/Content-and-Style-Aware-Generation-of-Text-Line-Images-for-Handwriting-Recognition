@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
-from models import GenModel_FC, WriterClaModel, DisModel, RecModel, write_image
+from resnet import GenModel_FC, WriterClaModel, DisModel, RecModel
 from loss import recon_criterion, crit, log_softmax
 from parameters import *
 
@@ -10,45 +10,24 @@ w_cla = 1.0
 w_l1 = 0.0
 w_rec = 1.0
 
-gpu = torch.device("cuda")
-
 
 class ConTranModel(nn.Module):
     def __init__(self, num_writers, show_iter_num, oov):
         super(ConTranModel, self).__init__()
-        self.gen = GenModel_FC().to(gpu)
-        self.cla = WriterClaModel(num_writers).to(gpu)
-        self.dis = DisModel().to(gpu)
-        self.rec = RecModel(pretrain=False).to(gpu)
+        self.gen = GenModel_FC().to(device=device)
+        self.cla = WriterClaModel(num_writers).to(device)
+        self.dis = DisModel().to(device)
+        self.rec = RecModel().to(device)
         self.iter_num = 0
         self.show_iter_num = show_iter_num
         self.oov = oov
 
     def forward(self, train_data_list, epoch, mode, cer_func=None):
-        (
-            tr_domain,
-            tr_wid,
-            tr_idx,
-            tr_img,
-            tr_img_width,
-            tr_label,
-            img_xt,
-            label_xt,
-            label_xt_swap,
-        ) = train_data_list
-        tr_wid = tr_wid.to(gpu)
-        tr_img = tr_img.to(gpu)
-        tr_img_width = tr_img_width.to(gpu)
-        tr_label = tr_label.to(gpu)
-        img_xt = img_xt.to(gpu)
-        label_xt = label_xt.to(gpu)
-        label_xt_swap = label_xt_swap.to(gpu)
-        batch_size = tr_domain.shape[0]
-
+        tr_img, tr_label = train_data_list
+        tr_label = tr_label
+        tr_img = tr_img.to(device).unsqueeze(0).to(device)
         if mode == "rec_update":
-            tr_img_rec = tr_img[
-                :, 0:1, :, :
-            ]  # 8,50,64,200 choose one channel 8,1,64,200
+            tr_img_rec = tr_img  # 8,50,64,200 choose one channel 8,1,64,200
             tr_img_rec = tr_img_rec.requires_grad_()
             tr_label_rec = tr_label[:, 0, :]  # 8,50,10 choose one channel 8,10
             pred_xt_tr = self.rec(
@@ -78,9 +57,7 @@ class ConTranModel(nn.Module):
             self.iter_num += 1
             """dis loss"""
             f_xs = self.gen.enc_image(tr_img)  # b,512,8,27
-            f_xt, f_embed = self.gen.enc_text(
-                label_xt, f_xs.shape
-            )  # b,4096  b,512,8,27
+            f_xt, f_embed = self.gen.enc_text(label_xt,)  # b,4096  b,512,8,27
             f_mix = self.gen.mix(f_xs, f_embed)
 
             xg = self.gen.decode(f_mix, f_xt)  # translation b,1,64,128
@@ -145,7 +122,7 @@ class ConTranModel(nn.Module):
 
             with torch.no_grad():
                 f_xs = self.gen.enc_image(tr_img)
-                f_xt, f_embed = self.gen.enc_text(label_xt, f_xs.shape)
+                f_xt, f_embed = self.gen.enc_text(label_xt)
                 f_mix = self.gen.mix(f_xs, f_embed)
                 xg = self.gen.decode(f_mix, f_xt)
                 # swap tambien

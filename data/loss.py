@@ -1,6 +1,7 @@
 import torch
 import Levenshtein as Lev
 from parameters import *
+import torch.nn.functional as F
 
 
 def recon_criterion(predict, target):
@@ -34,7 +35,26 @@ class LabelSmoothing(torch.nn.Module):
         return self.criterion(x, true_dist)
 
 
+def kl_divergence_loss(predicted_probs, target_probs):
+    eps = 1e-8  # Small constant to avoid division by zero
+
+    # Broadcast target_probs to match the shape of predicted_probs
+    # target_probs = target_probs.unsqueeze(0).expand_as(predicted_probs)
+    long_soft = torch.nn.Softmax(dim=1)
+    target_probs = target_probs.squeeze(2)
+    predicted_probs = long_soft(predicted_probs)
+    target_probs = long_soft(target_probs.float())
+    # predicted_probs=predicted_probs.squeeze(2)
+
+    # Apply logarithm to predicted probabilities
+    log_predicted_probs = torch.log(predicted_probs + eps)
+    # Calculate the element-wise KL divergence
+    kl_div = F.kl_div(log_predicted_probs, target_probs.view(-1), reduction="sum")
+    return kl_div
+
+
 log_softmax = torch.nn.LogSoftmax(dim=-1)
+
 crit = LabelSmoothing(len(vocab), tokens["PAD_TOKEN"], 0.4)
 
 
@@ -47,8 +67,8 @@ def fine(label_list):
 
 class CER:
     def __init__(self):
-        self.ed = 0
-        self.len = 0
+        self.ed = 1
+        self.len = 1
 
     def add(self, pred, gt):
         pred_label = torch.topk(pred, 1, dim=-1)[1].squeeze(-1)  # b,t,83->b,t,1->b,t

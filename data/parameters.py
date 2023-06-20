@@ -1,9 +1,9 @@
 import os, glob
 import torch
 
-scale_factor = 2 ** 1
-IMAGE_HEIGHT = 15  # 342
-IMAGE_WIDTH = 150  # 2270
+scale_factor = 1
+IMAGE_HEIGHT = 10  # 342
+IMAGE_WIDTH = 100  # 2270
 # device = torch.device("cuda" if torch.cu+2
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = "cpu"

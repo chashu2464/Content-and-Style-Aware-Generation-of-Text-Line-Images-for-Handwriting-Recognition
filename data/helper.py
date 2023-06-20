@@ -53,6 +53,7 @@ def decoding(label, decoder):
         words.append(torch.tensor(chars))
     return words  # [examples][batch_size]
 
+
 def encoding(label, decoder):
     # Label[example][batch_size]
     words = [

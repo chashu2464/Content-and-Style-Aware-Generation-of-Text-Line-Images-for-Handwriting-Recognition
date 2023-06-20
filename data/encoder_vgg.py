@@ -14,18 +14,19 @@ from decoder import LayerNormLinearDropoutBlock
 
 class Encoder(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(Encoder, self).__init__()
         B, C, H, W = (
             batch_size,
             32,
             IMAGE_HEIGHT * scale_factor,
             IMAGE_WIDTH * scale_factor,
         )
-        self.num_heads = 4
+        self.num_heads = 2
         head_size = 200
         print(f"channel:-{C=},Hight:- {H=} width:- {W=} Batch:- {B=}")
-        self.in_feature = 32 * IMAGE_HEIGHT * scale_factor * IMAGE_WIDTH * scale_factor
-        self.out_feature = 128
+        self.in_feature = 1 * IMAGE_HEIGHT * scale_factor * IMAGE_WIDTH * scale_factor
+        self.out_feature = 85
+        print(f"{self.in_feature=} {self.out_feature=}")
         self.resnet = Generator_Resnet(class_num=2, num_res_blocks=2).to(device)
         self.visual_encoder = Visual_encoder().to(device)  # vgg
         self.linear_downsampling = nn.Linear(
@@ -34,21 +35,23 @@ class Encoder(nn.Module):
         self.block_with_attention = LayerNormLinearDropoutBlock(
             in_features=self.in_feature,
             out_features=self.out_feature,
-            num_heads=2,
+            num_heads=self.num_heads,
             dropout_prob=0.2,
             attention=True,
         )
         self.block_without_attention = LayerNormLinearDropoutBlock(
             in_features=self.in_feature,
             out_features=self.out_feature,
-            num_heads=2,
+            num_heads=self.num_heads,
             dropout_prob=0.2,
             attention=False,
         )
         self.norm = nn.LayerNorm(self.out_feature)
 
     def forward(self, x):
-        resent = self.resnet(x)  # resent   batch_size,outchannel,Hight , Width
+        resent = self.resnet(
+            x.permute(1, 0, 2, 3)
+        )  # resent   batch_size,outchannel,Hight , Width
 
         # resent=resent.view(batch_size,-1)
         visual_encder = self.visual_encoder(x)  # visual encoder for positionin

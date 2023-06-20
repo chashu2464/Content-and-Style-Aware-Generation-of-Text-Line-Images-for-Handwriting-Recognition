@@ -41,5 +41,5 @@ class CustomImageDataset:
         print(idx)
         # import pdb;pdb.set_trace()
         Image, Labels = self.Load_Image_Label(self.img_dir[idx])
-        return torch.tensor(Image, device="cpu").float(), Labels
+        return torch.tensor(Image, device=device).float(), Labels
         # return Image,Labels

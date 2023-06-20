@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from attention import MultiHeadAttention, MultiHead_CrossAttention
 
-from models import TextEncoder_FC
+from text_style import TextEncoder_FC
 from parameters import (
     embedding_size,
     text_max_len,
@@ -14,7 +14,7 @@ from parameters import (
 
 
 class Decorder(torch.nn.Module):
-    def __init__(self, in_feature=32, out_feature=128, dropout=0.3):
+    def __init__(self, in_feature=32, out_feature=85, dropout=0.3):
         super().__init__()
         self.dropout = dropout
         self.in_feature = in_feature
@@ -45,15 +45,16 @@ class Decorder(torch.nn.Module):
         self.cross_attention = MultiHead_CrossAttention(
             infeature=self.out_feature,
             out_feature=self.out_feature,
-            num_heads=2,
+            num_heads=1,
             dropout=0.2,
         )
         self.drop = nn.Dropout(self.dropout)
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, x, encoder_out):
+    def forward(self, encoder_out, text_style_content=None):
 
-        char_embedding, global_net = self.TextStyle(x)
+        # char_embedding= 2,5440 global_net=[2,64,10,100]  batch,output,H,W
+        char_embedding, global_net = self.TextStyle(text_style_content)
         char_upsampling = self.linear_upsampling(char_embedding)
         txt_style = global_net + char_upsampling.view(
             global_net.size(0),
@@ -62,6 +63,8 @@ class Decorder(torch.nn.Module):
             global_net.size(3),
         )
         print(f"{txt_style.shape=}")
+        ## layer norm has the same shape are hte txt_style and global_net [2,64000]
+        # attention_block=2,85
         attetion_block, layer_norm = self.block_with_attention(
             txt_style.reshape(txt_style.size(0), -1)
         )
@@ -75,18 +78,15 @@ class Decorder(torch.nn.Module):
         norm = self.norm(combained_without_attention)
         cross_attention = self.cross_attention(norm, encoder_out)
         drop_out = self.drop(cross_attention)
-        norm = norm.repeat(drop_out.size(0) // (batch_size + batch_size), 1)
-        print(f"{norm.shape=} {drop_out.shape=}")
+        # norm = norm.repeat(drop_out.size(0) // (batch_size + batch_size), 1)
         combained_without_attention = drop_out + norm
         block_without_attention2, _ = self.block_without_attention(
             combained_without_attention
         )
         final_combained = block_without_attention2 + combained_without_attention
+
         soft_max = self.softmax(final_combained)
-        print(soft_max)
-        print(f"{cross_attention.shape=}")
-        print("End of decoder")
-        return True
+        return final_combained
 
 
 class LayerNormLinearDropoutBlock(nn.Module):
