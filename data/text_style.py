@@ -47,7 +47,7 @@ class TextEncoder_FC(nn.Module):
         """embed content force"""
         xx_new = self.linear(embedding.view(2, -1)).view(
             embedding.size(0), embedding.size(1), embedding.size(2)
-        )  # b, text_max_len, 512
+        )  # b, text_max_len, 64
 
         ts = xx_new.shape[1]  # b,512,8,27
         height_reps = IMAGE_HEIGHT  # 8 [-2]
@@ -74,4 +74,5 @@ class TextEncoder_FC(nn.Module):
             2
         )  # b, 512, 1, text_max_len * width_reps + padding_reps
         final_res = torch.cat([res] * height_reps, dim=2)
-        return out, final_res
+        import pdb;pdb.set_trace()
+        return out, final_res #2,85,5440 , batch,c,h,w

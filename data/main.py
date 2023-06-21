@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,random_split
 import tqdm
 from parameters import *
 from data_set import CustomImageDataset
@@ -230,37 +230,34 @@ if __name__ == "__main__":
                        Basically pad the string with the empety size character until the maximum size is being achieved
             Str
                     
-
-
     """
     print("batch_size", batch_size)
     print("program is running using::", device)
     print(time.ctime())
     TextDatasetObj = CustomImageDataset()
-    no_workers = batch_size // num_example
-    print("number of workers", no_workers)
-    no_workers = 0
-    dataset = torch.utils.data.DataLoader(
-        TextDatasetObj, batch_size=batch_size, num_workers=no_workers
-    )
-    if len(dataset) == 0:
-        print("The train_loader is empty.")
-        StopIteration
+    train_ratio = 0.8
+    test_ratio = 1 - train_ratio
 
-    train_size = int(0.8 * (len(dataset)))
-    test_size = len(dataset) - train_size
-    train_dataset, test_dataset = torch.utils.data.random_split(
-        dataset, [train_size, test_size]
-    )
-    train_data_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, num_workers=no_workers
-    )
-    test_data_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=batch_size, num_workers=no_workers
-    )
+    # Calculate the sizes of train and test sets based on the split ratios
+    train_size = int(train_ratio * len(TextDatasetObj))
+    test_size = len(TextDatasetObj) - train_size
+
+    # Split the dataset into train and test sets
+    train_set, test_set = random_split(TextDatasetObj, [train_size, test_size])
+
+    # Define batch size and number of workers for DataLoader
+    num_workers = 1
+
+    # Create DataLoader instances for train and test sets
+    train_loader = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers)
+    test_loader = DataLoader(test_set, batch_size=batch_size, num_workers=num_workers)
+    if len(train_loader) | len(test_loader)==0:
+        print("Data isn't loaded properly")
+    else:
+        print(f"{len(train_loader)=}     {len(test_loader)}=")
 
     main(
-        train_loader=dataset, test_loader=test_dataset,
+        train_loader=train_loader, test_loader=test_loader,
     )
 
     # decoder_net = Decorder().to(device)

@@ -38,8 +38,6 @@ class CustomImageDataset:
         return len(self.img_dir)
 
     def __getitem__(self, idx):
-        print(idx)
-        # import pdb;pdb.set_trace()
         Image, Labels = self.Load_Image_Label(self.img_dir[idx])
         return torch.tensor(Image, device=device).float(), Labels
         # return Image,Labels
