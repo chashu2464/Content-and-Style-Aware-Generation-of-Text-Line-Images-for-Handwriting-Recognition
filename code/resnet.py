@@ -17,28 +17,38 @@ class AdaptiveInstanceNorm2d(nn.Module):
         self.momentum = momentum
         self.weight = None
         self.bias = None
-        self.register_buffer('running_mean', torch.zeros(num_features))
-        self.register_buffer('running_var', torch.ones(num_features))
+        self.register_buffer("running_mean", torch.zeros(num_features))
+        self.register_buffer("running_var", torch.ones(num_features))
 
     def forward(self, x):
-        assert self.weight is not None and \
-               self.bias is not None, "Please assign AdaIN weight first"
+        assert (
+            self.weight is not None and self.bias is not None
+        ), "Please assign AdaIN weight first"
         b, c = x.size(0), x.size(1)
         running_mean = self.running_mean.repeat(b)
         running_var = self.running_var.repeat(b)
         x_reshaped = x.contiguous().view(1, b * c, *x.size()[2:])
         out = F.batch_norm(
-            x_reshaped, running_mean, running_var, self.weight, self.bias,
-            True, self.momentum, self.eps)
+            x_reshaped,
+            running_mean,
+            running_var,
+            self.weight,
+            self.bias,
+            True,
+            self.momentum,
+            self.eps,
+        )
         return out.view(b, c, *x.size()[2:])
 
     def __repr__(self):
-        return self.__class__.__name__ + '(' + str(self.num_features) + ')'
+        return self.__class__.__name__ + "(" + str(self.num_features) + ")"
+
+
 class AdaLN(nn.Module):
     def __init__(self, num_features, eps=1e-5):
         super().__init__()
         self.eps = eps
-        self.num_features=num_features
+        self.num_features = num_features
         self.rho = nn.Parameter(torch.Tensor(1, num_features, 1, 1))
         self.gamma = nn.Parameter(torch.Tensor(1, num_features, 1, 1))
         self.beta = nn.Parameter(torch.Tensor(1, num_features, 1, 1))
@@ -56,7 +66,9 @@ class AdaLN(nn.Module):
         return self.gamma * x + self.beta
 
     def __repr__(self):
-        return self.__class__.__name__ + '(' + str(self.num_features) + ')'
+        return self.__class__.__name__ + "(" + str(self.num_features) + ")"
+
+
 class ResidualBlock(nn.Module):
     def __init__(
         self,
@@ -186,19 +198,21 @@ class WriterClaModel(nn.Module):
         cnn_f = self.cnn_f(x)
         resnet = self.res_blocks(cnn_f)
         ff_cc = self.ff_cc(resnet)
-        loss = self.cross_entropy(ff_cc.view(-1, self.num_writers), y.view(-1).long())
+        loss = self.cross_entropy(ff_cc.view(ff_cc.size(0),-1), y.view(-1).long())
         return loss
+
 
 def assign_adain_params(adain_params, model):
     # assign the adain_params to the AdaIN layers in model
     for m in model.modules():
         if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
-            mean = adain_params[:, :m.num_features]
-            std = adain_params[:, m.num_features:2*m.num_features]
+            mean = adain_params[:, : m.num_features]
+            std = adain_params[:, m.num_features : 2 * m.num_features]
             m.bias = mean.contiguous().view(-1)
             m.weight = std.contiguous().view(-1)
-            if adain_params.size(1) > 2*m.num_features:
-                adain_params = adain_params[:, 2*m.num_features:]
+            if adain_params.size(1) > 2 * m.num_features:
+                adain_params = adain_params[:, 2 * m.num_features :]
+
 
 class GenModel_FC(nn.Module):
     def __init__(self):
@@ -207,12 +221,12 @@ class GenModel_FC(nn.Module):
         self.encoding = Encoder().to(device)
         self.enc_text = TextEncoder_FC().to(device)
         self.generator = Generator_Resnet().to(device)
-        self.linear_mix = nn.Conv2d(2, 1, 1, 1).to(device)
-        self.dowm_sampling = nn.Conv2d(
+        self.linear_mix = nn.Conv2d(1, 2, 1, 1).to(device)
+        self.down_sampling = nn.Conv2d(
             in_channels=64, out_channels=1, kernel_size=1, stride=1
         )
 
-    def decode(self, content,adain_params):
+    def generate(self, content, adain_params):
         # decode content and style codes to an image
         assign_adain_params(adain_params, self.generator)
 
@@ -220,11 +234,10 @@ class GenModel_FC(nn.Module):
 
     # feat_mix: b,1024,8,27
     def mix(self, feat_xs, feat_embed):
-        down_sampling = self.dowm_sampling(feat_embed)
-        feat_mix = torch.cat(
-            [feat_xs, down_sampling], dim=-1
-        )  # b,1024,8,27
-        ff = self.linear_mix(feat_mix.permute(1,0,2,3))  # b,8,27,1024->b,8,27,512
+        
+        down_sampling = self.down_sampling(feat_embed)
+        feat_mix = torch.cat([feat_xs, down_sampling], dim=0)  # b,1024,8,27
+        ff = self.linear_mix(feat_mix)  # b,8,27,1024->b,8,27,512
         return ff
 
 
@@ -277,10 +290,10 @@ class Generator(nn.Module):
 class RecModel(nn.Module):
     def __init__(self):
         super(RecModel, self).__init__()
-        self.enc = Encoder()
-        self.dec = Decorder()
+        self.enc = Encoder().to(device)
+        self.dec = Decorder().to(device)
 
     def forward(self, image, text):
-        visual_out = self.enc(image)
+        visual_out = self.enc(image.to(device))
         text_visual = self.dec(visual_out, text)
         return text_visual

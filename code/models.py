@@ -1,13 +1,14 @@
 import torch.nn as nn
 from helper import batch_size
 
+
 class Visual_encoder(nn.Module):
     def __init__(self):
         super(Visual_encoder, self).__init__()
-        
+
         self.conv1 = nn.Sequential(
             nn.Conv2d(
-                in_channels=1, out_channels=100, kernel_size=3, stride=1, padding=1
+                in_channels=batch_size, out_channels=100, kernel_size=3, stride=1, padding=1
             ),
             nn.ReLU(),
             nn.BatchNorm2d(100),
@@ -37,7 +38,7 @@ class Visual_encoder(nn.Module):
     def forward(self, x):
         print("Shape of the Input in VGG network:-", x.shape)
 
-        x = self.conv1(x.permute(1,0,2,3))
+        x = self.conv1(x.permute(1, 0, 2, 3))
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)

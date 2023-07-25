@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from parameters import number_feature
+from helper import batch_size,device
 
 class AdaLN(nn.Module):
     def __init__(self, num_features, eps=1e-5):
@@ -22,7 +23,6 @@ class AdaLN(nn.Module):
         var = torch.var(x, dim=1, keepdim=True)
         x = (x - mean) / torch.sqrt(var + self.eps)
         return self.gamma * x + self.beta
-
 
 
 class ResidualBlock(nn.Module):
@@ -67,14 +67,12 @@ class ResidualBlock(nn.Module):
 
 
 class Generator_Resnet(nn.Module):
-    def __init__(
-        self, num_res_blocks=2, norm_layer=AdaLN, activation=F.leaky_relu
-    ):
+    def __init__(self, num_res_blocks=2, norm_layer=AdaLN, activation=F.leaky_relu):
         super().__init__()
         self.num_res_blocks = num_res_blocks
         self.norm_layer = norm_layer
         self.activation = activation
-        self.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1,)
+        self.conv1 = nn.Conv2d(batch_size, 64, kernel_size=3, stride=1, padding=1,)
         self.bn1 = norm_layer(64)
         self.res_blocks = nn.Sequential(
             *[
@@ -107,7 +105,7 @@ class Generator_Resnet(nn.Module):
         self.tanh = nn.Tanh()
 
     def forward(self, x):
-    
+
         print("shape of  the input image in generator resnet :-", x.shape)
         x = self.conv1(x)
         x = self.bn1(x)

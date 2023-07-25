@@ -9,7 +9,9 @@ from parameters import IMAGE_HEIGHT, IMAGE_WIDTH, device
 
 class CustomImageDataset:
     def __init__(
-        self, base_path="short_data/Words_data", img_dir=glob.glob("short_data/Words_images/*"),
+        self,
+        base_path="short_data/Words_data",
+        img_dir=glob.glob("short_data/Words_images/*"),
     ):
 
         self.base_path = base_path

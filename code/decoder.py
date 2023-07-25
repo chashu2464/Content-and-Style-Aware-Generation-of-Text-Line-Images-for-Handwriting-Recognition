@@ -6,29 +6,33 @@ from text_style import TextEncoder_FC
 from parameters import (
     embedding_size,
     text_max_len,
-    IMAGE_HEIGHT,
-    IMAGE_WIDTH,
     batch_size,
     device,
     number_feature,
+    num_heads
 
 )
+from load_data import NUM_CHANNEL,IMG_HEIGHT,IMG_WIDTH
 
+input_feature=NUM_CHANNEL*IMG_WIDTH*IMG_HEIGHT
 
 class Decorder(torch.nn.Module):
-    def __init__(self, in_feature=32, out_feature=IMAGE_WIDTH, dropout=0.3):
+    def __init__(self, in_feature=IMG_HEIGHT*IMG_WIDTH, out_feature=text_max_len, dropout=0.3):
         super().__init__()
         self.dropout = dropout
         self.in_feature = in_feature
         self.out_feature = out_feature
         self.TextStyle = TextEncoder_FC().to(device)
-        self.in_feature = embedding_size * IMAGE_HEIGHT * IMAGE_WIDTH
+        self.in_feature = embedding_size *IMG_HEIGHT*IMG_WIDTH
+
         self.linear_upsampling = nn.Linear(
             number_feature, self.in_feature
         )
         self.linear_downsampling = nn.Linear(
             in_features=self.in_feature, out_features=self.out_feature
         )
+        self.upsample_norm=nn.Conv2d(batch_size*num_heads,NUM_CHANNEL*num_heads,1,1,)
+
         self.block_with_attention = LayerNormLinearDropoutBlock(
             in_features=self.in_feature,
             out_features=self.out_feature,
@@ -65,9 +69,9 @@ class Decorder(torch.nn.Module):
             global_net.size(2),
             global_net.size(3),
         )
-        print(f"{txt_style.shape=}")
         ## layer norm has the same shape are hte txt_style and global_net [2,64000]
         # attention_block=2,85
+        print("in deco")
         attetion_block, layer_norm = self.block_with_attention(
             txt_style.reshape(txt_style.size(0), -1)
         )
@@ -75,14 +79,19 @@ class Decorder(torch.nn.Module):
         norm_down_sample = norm_down_sample.repeat(
             attetion_block.size(0) // batch_size, 1
         )# mask for  text 
+
         attention_norm = attetion_block + norm_down_sample
         block_without_attention, _ = self.block_without_attention(attention_norm)
         combained_without_attention = block_without_attention + attention_norm
+
         norm = self.norm(combained_without_attention)
-        cross_attention = self.cross_attention(norm, encoder_out)
+
+        upsample_norm=self.upsample_norm(norm.unsqueeze(1)).squeeze(1)
+        cross_attention = self.cross_attention(upsample_norm, encoder_out)
         drop_out = self.drop(cross_attention)
         # norm = norm.repeat(drop_out.size(0) // (batch_size + batch_size), 1)
-        combained_without_attention = drop_out + norm
+        combained_without_attention = drop_out + upsample_norm
+
         block_without_attention2, _ = self.block_without_attention(
             combained_without_attention
         )
@@ -105,7 +114,6 @@ class LayerNormLinearDropoutBlock(nn.Module):
                 in_features, out_features, num_heads, dropout_prob
             )
         else:
-            print("attention is not applied")
             self.layer_norm = nn.LayerNorm(out_features)
             self.linear = nn.Linear(out_features, out_features)
         self.dropout = nn.Dropout(dropout_prob)
@@ -118,7 +126,6 @@ class LayerNormLinearDropoutBlock(nn.Module):
         else:
             # Apply linear transformation to the input tensor
 
-            print("attention is not applied")
 
             x = self.linear(layer_norm)
 

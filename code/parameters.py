@@ -2,15 +2,16 @@ import os, glob
 import torch
 
 scale_factor = 1
-number_feature=2000
-IMAGE_HEIGHT =  64//10
-IMAGE_WIDTH =250//10
+number_feature = 2000
+# IMAGE_HEIGHT = 64 // 10
+# IMAGE_WIDTH = 250 // 10
 # device = torch.device("cuda" if torch.cu+2
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#device = "cpu"
+#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = "cpu"
 batch_size = 2
 embedding_size = 64
 Max_str = 25
+num_heads=2
 text_max_len = Max_str
 
 vocab = {

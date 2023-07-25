@@ -51,7 +51,6 @@ class MultiHeadAttention(nn.Module):
         out = torch.cat([h(x) for h in self.heads])
 
         out = self.dropout(out)
-        print(out.shape)
         return out
 
 
@@ -111,5 +110,4 @@ class MultiHead_CrossAttention(nn.Module):
         out = torch.cat([h.forward(encoder, decoder) for h in self.heads])
 
         out = self.dropout(out)
-        print(out.shape)
         return out

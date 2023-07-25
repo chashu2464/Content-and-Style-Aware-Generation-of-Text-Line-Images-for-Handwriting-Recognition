@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from parameters import *
-from parameters import number_feature
+from load_data import IMG_HEIGHT,IMG_WIDTH
 
 class TextEncoder_FC(nn.Module):
     def __init__(self) -> None:
@@ -37,11 +37,11 @@ class TextEncoder_FC(nn.Module):
         just take care of it. 
         
         """
-
-        embedding = self.embed(x.squeeze(-1).long())  # b,t,embed
+        embedding = self.embed(x)  # b,t,embed
 
         batch_size = embedding.shape[0]
         xxx = embedding.reshape(batch_size, -1)  # b,t*embed
+
         out = self.fc(xxx)
 
         """embed content force"""
@@ -50,15 +50,15 @@ class TextEncoder_FC(nn.Module):
         )  # b, text_max_len, 64
 
         ts = xx_new.shape[1]  # b,512,8,27
-        height_reps = IMAGE_HEIGHT  # 8 [-2]
-        width_reps = max(1, IMAGE_WIDTH // ts)  # [-2] 27
+        height_reps = IMG_HEIGHT  # 8 [-2]
+        width_reps = max(1, IMG_WIDTH // ts)  # [-2] 27
         tensor_list = list()
         for i in range(ts):
             text = [xx_new[:, i : i + 1]]  # b, text_max_len, 512
             tmp = torch.cat(text * width_reps, dim=1)
             tensor_list.append(tmp)
 
-        padding_reps = IMAGE_WIDTH % ts
+        padding_reps = IMG_WIDTH % ts
         if padding_reps:
             embedded_padding_char = self.embed(
                 torch.full((1, 1), 2, dtype=torch.long, device=device)
@@ -74,4 +74,4 @@ class TextEncoder_FC(nn.Module):
             2
         )  # b, 512, 1, text_max_len * width_reps + padding_reps
         final_res = torch.cat([res] * height_reps, dim=2)
-        return out, final_res #2,85,5440 , batch,c,h,w
+        return out, final_res  # 2,85,5440 , batch,c,h,w

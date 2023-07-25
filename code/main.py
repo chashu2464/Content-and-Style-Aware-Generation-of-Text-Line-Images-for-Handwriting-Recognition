@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import DataLoader,random_split
+from torch.utils.data import DataLoader, random_split
 import tqdm
 from parameters import *
 from data_set import CustomImageDataset
@@ -23,8 +23,8 @@ OOV = True
 NUM_THREAD = 2
 
 EARLY_STOP_EPOCH = None
-EVAL_EPOCH = 20000
-MODEL_SAVE_EPOCH = 200
+EVAL_EPOCH = 10
+MODEL_SAVE_EPOCH = 20
 show_iter_num = 500
 LABEL_SMOOTH = True
 Bi_GRU = True
@@ -36,73 +36,86 @@ lr_rec = 1 * 1e-5
 lr_cla = 1 * 1e-5
 OOV = True
 CurriculumModelID = 0
+writer = SummaryWriter(log_dir="Logs")
+
 
 
 def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
 
+    """
+    Function Responseible for the whole train process and optimization step
+
+        Parameters
+
+            Train_loader: Train dataset
+            model: Combained model 
+            dis_opt:  discriminator optimizer
+            rec_opt: Recognizer optimizer
+            cla_opt: Writer optimizer
+            epoch : Number of epoch
+        
+        Return 
+
+        loss_dis: discriminative loss
+        loss_writer:  Writer loss
+        loss_rec : Recognizer Loss
+        Loss_gen : Generative loss
+    
+    """
+
     model.train()
     loss_dis = list()
     loss_dis_tr = list()
-    loss_cla = list()
+    loss_writer = list()
     loss_cla_tr = list()
-    loss_l1 = list()
+    loss_gen=list()
     loss_rec = list()
     loss_rec_tr = list()
     time_s = time.time()
-    cer_tr = CER()
-    cer_te = CER()
-    cer_te2 = CER()
-    # train_data_list=iter(train_data_loader)
-    # train_data=next(train_data_list)
+
     for iter, train_data_list in enumerate(train_loader):
-       writer = SummaryWriter(log_dir='logs')
-       """Generator Image"""
-       gen_opt.zero_grad()
-        
-       gen_loss=model(train_data_list,epoch,"gen_update")
-       print("Generator loss", gen_loss)
-        
-       """dis update"""
-       dis_opt.zero_grad()
-       dis_loss = 0.0
-       dis_loss = model(train_data_list, epoch, "dis_update").item()
-       print(
-            "Discriminative Loss----------------------------------------------",
-            dis_loss,
-       )
+        """Generator Image"""
+        gen_opt.zero_grad()
 
-       loss_dis_tr.append(dis_loss)
+        gen_loss = model(train_data_list, epoch, "gen_update")
+        # print("Generator loss", gen_loss)
+        gen_opt.step()
+        """dis update"""
+        dis_opt.zero_grad()
 
-       dis_opt.step()
-        
-       """rec update"""
-       rec_opt.zero_grad()
-       writer_loss = 0.0
+        dis_loss = model(train_data_list, epoch, "dis_update").item()
 
-       writer_loss = model(train_data_list, epoch, "cla_update")
-       print("Writer loss-------------------------", writer_loss.item())
-       loss_rec_tr.append(writer_loss.item())
-       rec_opt.step()
-       """classifier update"""
-       print("going to the classifer")
-       cla_opt.zero_grad()
-       reg_loss = 0.0
-       reg_loss = model(train_data_list, epoch, "rec_update")
-       print("cRecognizer Loss______________------------------", reg_loss)
-       loss_cla_tr.append(reg_loss.item())
-       cla_opt.step()
+        loss_dis_tr.append(dis_loss)
 
-       print(f"Iteation={iter} --Times {time.time()-time_s}-----Generator Loss {gen_loss}--Writer loss{writer_loss} Discriminator Loss{dis_loss} Recognizaer Loss{reg_loss}")
-       writer.add_scalar('Generator loss', gen_loss, iter)
-       writer.add_scalar('Writer loss', writer_loss, iter)
-       writer.add_scalar('Discriminator loss', dis_loss, iter)
-       writer.add_scalar('Recognizer loss', reg_loss, iter)
+        dis_opt.step()
+
+        """rec update"""
+        rec_opt.zero_grad()
+
+        writer_loss = model(train_data_list, epoch, "cla_update")
+        # print("Writer loss-------------------------", writer_loss.item())
+        loss_rec_tr.append(writer_loss.item())
+        rec_opt.step()
+        """classifier update"""
+        # print("going to the classifer")
+        cla_opt.zero_grad()
+
+        reg_loss = model(train_data_list, epoch, "rec_update")
+        # print("cRecognizer Loss______________------------------", reg_loss)
+        loss_cla_tr.append(reg_loss.item())
+        cla_opt.step()
+
+        print(
+            f"Iteation={iter} --Times {time.time()-time_s}-----Generator Loss {gen_loss}--Writer loss{writer_loss} Discriminator Loss{dis_loss} Recognizaer Loss{reg_loss}"
+        )
+        loss_dis.append(dis_loss)
+        loss_writer.append(writer_loss)
+        loss_rec.append(reg_loss)
+        loss_gen.append(gen_loss)
+
+    return np.mean(loss_dis),np.mean(loss_writer),np.mean(loss_rec),np.mean(loss_gen)
 
 
-
-     
-
-   
 def test(test_loader, epoch, modelFile_o_model):
     print("coming into the test", epoch)
     if type(modelFile_o_model) == str:
@@ -135,9 +148,9 @@ def test(test_loader, epoch, modelFile_o_model):
 
 
 def main(train_loader, test_loader):
-    print("Entering main")
+    
     model = Collective_train(
-        num_writers=NUM_WRITERS, show_iter_num=show_iter_num, oov=OOV
+        num_writers=NUM_WRITERS, show_iter_num=show_iter_num
     ).to(device)
     dis_params = list(model.discri.parameters())
     gen_params = list(model.generative.parameters())
@@ -176,7 +189,6 @@ def main(train_loader, test_loader):
     # min_count = 0
 
     for epoch in range(CurriculumModelID, epochs):
-        cer = train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch)
 
         if epoch % MODEL_SAVE_EPOCH == 0:
             folder_weights = "save_weights"
@@ -184,8 +196,8 @@ def main(train_loader, test_loader):
                 os.makedirs(folder_weights)
             torch.save(model.state_dict(), folder_weights + "/contran-%d.model" % epoch)
 
-        # if epoch % EVAL_EPOCH == 0:
-        #     test(test_loader, epoch, model)
+        if epoch % EVAL_EPOCH == 0:
+            test(test_loader, epoch, model)
 
         if EARLY_STOP_EPOCH is not None:
             if min_cer > cer:
@@ -195,6 +207,12 @@ def main(train_loader, test_loader):
                 rm_old_model(min_idx)
             else:
                 min_count += 1
+                gen_loss,writer_loss,dis_loss,reg_loss= train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch)
+
+                writer.add_scalar("Generator loss", gen_loss, epoch)
+                writer.add_scalar("Writer loss", writer_loss, epoch)
+                writer.add_scalar("Discriminator loss", dis_loss, epoch)
+                writer.add_scalar("Recognizer loss", reg_loss, epoch)
             if min_count >= EARLY_STOP_EPOCH:
                 print("Early stop at %d and the best epoch is %d" % (epoch, min_idx))
                 model_url = "save_weights/contran-" + str(min_idx) + ".model"
@@ -213,12 +231,14 @@ def rm_old_model(index):
 
 if __name__ == "__main__":
 
-    """ 
-            dataset:- returns the Images and Label in form of the batch_size and num_example 
-            pad_str:- Function is used the pad the strings in the label so each of the string has the equal length
-                       Basically pad the string with the empety size character until the maximum size is being achieved
-            Str
-                    
+    """
+        The CustomerImageData is actual class for the data loading is called here after the data spliting data is being sent to  main function
+
+        Parameters:
+           1    TextDatasetObj: Object of data-loading class
+           2    Train and Test Holds the Train and Test set 
+        Returns:
+            None
     """
     print("batch_size", batch_size)
     print("program is running using::", device)
@@ -240,14 +260,53 @@ if __name__ == "__main__":
     # Create DataLoader instances for train and test sets
     train_loader = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers)
     test_loader = DataLoader(test_set, batch_size=batch_size, num_workers=num_workers)
-    if len(train_loader) | len(test_loader)==0:
+
+    #check if data is being loaded properly 
+    if len(train_loader) | len(test_loader) == 0:
         print("Data isn't loaded properly")
     else:
-        print(f"{len(train_loader)=}     {len(test_loader)}=")
+        print(f"{len(train_loader)=}     {len(test_loader)=}")
 
     main(
         train_loader=train_loader, test_loader=test_loader,
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     # decoder_net = Decorder().to(device)
     # encoder_net = Encoder().to(device)
