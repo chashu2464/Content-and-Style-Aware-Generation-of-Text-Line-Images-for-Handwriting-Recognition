@@ -211,9 +211,7 @@ class Conv2dBlock(nn.Module):
         print("Shape of X", x.shape)
         print("coming into the CONV2D")
         if self.activation_first:
-            import pdb
 
-            pdb.set_trace()
             if self.activation:
                 x = self.activation(x)
             pad = self.pad(x)

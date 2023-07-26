@@ -49,7 +49,8 @@ def kl_divergence_loss(predicted_probs, target_probs):
     # Apply logarithm to predicted probabilities
     log_predicted_probs = torch.log(predicted_probs + eps)
     # Calculate the element-wise KL divergence
-    kl_div = F.kl_div(log_predicted_probs, target_probs, reduction="sum")
+
+    kl_div = F.kl_div(log_predicted_probs, target_probs.view(1,-1), reduction="sum")
     return kl_div
 
 log_softmax = torch.nn.LogSoftmax(dim=-1)

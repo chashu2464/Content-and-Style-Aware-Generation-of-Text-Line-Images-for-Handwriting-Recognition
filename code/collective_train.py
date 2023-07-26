@@ -5,7 +5,7 @@ from resnet import GenModel_FC, WriterClaModel, DisModel, RecModel
 from parameters import *
 from loss import recon_criterion, crit, log_softmax, kl_divergence_loss
 from helper import pad_str, encoding
-from encoder_vgg import Encoder
+from load_data import OUTPUT_MAX_LEN
 
 # defining the learning rate
 
@@ -23,7 +23,7 @@ class Collective_train(nn.Module):
     def __init__(self, num_writers, show_iter_num):
 
         super(Collective_train, self).__init__()
-        self.generative = GenModel_FC().to(device)
+        self.generative = GenModel_FC(Max_str).to(device)
         self.writer_Model = WriterClaModel(num_writers).to(device)
         self.discri = DisModel().to(device)
         self.recog = RecModel().to(device)
@@ -33,15 +33,15 @@ class Collective_train(nn.Module):
 
     def forward(self, train_set, epoch, mode, cer_func=None):
         for i in range(100):
-
-            tr_img, tr_label = train_set
-            tr_label, writer_id = tr_label[0], tr_label[1]
-            label = pad_str(tr_label)
-           
-            stio_ten = encoding(label=label, decoder=encoder)
-            tr_label = torch.stack(stio_ten, dim=0)
+            tr_domain, tr_wid, tr_idx, tr_img, tr_img_width, tr_label, img_xt, label_xt, label_xt_swap = train_set
+            tr_wid = tr_wid.to(device)
+            tr_img = tr_img.to(device)
+            tr_img_width = tr_img_width.to(device)
             tr_label = tr_label.to(device)
-            tr_img = tr_img.to(device).unsqueeze(0).to(device)
+            img_xt = img_xt.to(device)
+            label_xt = label_xt.to(device)
+            label_xt_swap = label_xt_swap.to(device)
+            batch_size = tr_domain.shape[0]
 
             if mode == "dis_update":
                 """
@@ -50,19 +50,18 @@ class Collective_train(nn.Module):
 
                 """
                 sample_img = tr_img.requires_grad_()
-                real_loss = self.discri.calc_dis_real_loss(sample_img)
+                real_loss = self.discri.calc_dis_real_loss(sample_img.permute(1,0,2,3))
                 real_loss.backward()
                 with torch.no_grad():
                     sr_img = tr_img.requires_grad_()
                     f_xs = self.generative.enc_image(sr_img)  # b,512,8,27
-                    f_xt, f_embed = self.generative.enc_text(
-                        tr_label
-                    )  
-                    xg = self.generative.generate(f_xs, f_embed)
-                fake_loss = self.discri.calc_dis_fake_loss(xg.permute(1, 0, 2, 3))
+                    f_xt, f_embed = self.generative.enc_text(label_xt, f_xs.shape) # b,4096  b,512,8,27
+                    xg = self.generative.generate(f_xs.permute(1,0,2,3), f_embed)
+                fake_loss = self.discri.calc_dis_fake_loss(xg)
 
                 fake_loss.backward()
                 total_loss = real_loss + fake_loss
+                print("discriminator",total_loss)
                 return total_loss
             elif mode == "cla_update":
 
@@ -72,22 +71,27 @@ class Collective_train(nn.Module):
                 """ 
                 tr_img_rec = tr_img.requires_grad_()
                 f_xs = self.generative.enc_image(tr_img_rec)
-                writer_loss = self.writer_Model(f_xs,writer_id)
+                writer_loss = self.writer_Model(f_xs,tr_wid)
                 writer_loss.backward()
+                print("writer loss",writer_loss)
                 return writer_loss
+            
 
             elif mode == "rec_update":
                 """
                     Recognizer Loss with respect with KL_divergence
 
                 """
+                f_xs = self.generative.enc_image(tr_img)  # b,512,8,27
                 tr_img_rec = tr_img.requires_grad_()
-                output = self.recog(tr_img_rec, tr_label)
-                divided = output.size(0) // tr_label.size(0)
+
+                output = self.recog(tr_img_rec, label_xt)
+                divided = output.size(0) // label_xt.size(0)
                 output = output.view(divided, -1)
 
-                loss_kl = kl_divergence_loss(output, tr_label)
+                loss_kl = kl_divergence_loss(output, label_xt)
                 loss_kl.backward()
+                print("KL lsos",loss_kl)
                 return loss_kl
 
             elif mode == "gen_update":
@@ -97,11 +101,13 @@ class Collective_train(nn.Module):
                      
                 """ 
                 self.iter_num += 1
+         
                 f_xs = self.generative.enc_image(tr_img)  # b,512,8,27
-                f_xt, f_embed = self.generative.enc_text(tr_label)  # b,4096  b,512,8,27
-                f_mix = self.generative.mix(f_xs, f_embed)
-                xg = self.generative.generate(f_mix, f_embed)
+                f_xt, f_embed = self.generative.enc_text(label_xt,f_xs.shape) # b,4096  b,512,8,27
+                f_mix = self.generative.mix_final(f_xs, f_embed)
+                xg = self.generative.generate(f_mix.permute(1,0,2,3), f_embed)
                 l_dis_ori = self.discri.calc_gen_loss(xg.permute(1, 0, 2, 3))
+                print("l_dis",l_dis_ori)
                 return l_dis_ori
             
             
@@ -109,18 +115,20 @@ class Collective_train(nn.Module):
                 with torch.no_grad():
                     f_xs = self.generative.enc_image(tr_img)  # b,512,8,27
                     f_xt, f_embed = self.generative.enc_text(
-                        tr_label
+                        label_xt,f_xs.shape
                     )  # b,4096  b,512,8,27
-                    f_mix = self.generative.mix(f_xs, f_embed)
-                    xg = self.generative.decode(f_mix, f_embed)
+
+                    f_mix = self.generative.mix_final(f_xs, f_embed)
+
+                    xg = self.generative.generate(f_mix.permute(1,0,2,3), f_embed)
                     # print("coming into the the test case")
                     pred_xt = self.recog(
                         xg.view(
                             tr_img.size(0),
                             tr_img.size(1),
                             tr_img.size(2),
-                            tr_img.size(3),
-                        ),
+                            -1
+                      ),
                         tr_label,
                     )
                     self.iter_num += 1
@@ -132,9 +140,9 @@ class Collective_train(nn.Module):
                     divided = pred_xt.size(0) // tr_label.size(0)
                     pred_xt = pred_xt.view(divided, -1)
 
-                    l_rec_ori = kl_divergence_loss(pred_xt, tr_label)
+                    l_rec_ori = kl_divergence_loss(pred_xt, label_xt)
 
                     """Writer classification Loss """
 
-                    l_cla_ori = self.writer_Model(xg, tr_img)
+                    l_cla_ori = self.writer_Model(xg.permute(1,0,2,3), tr_wid)
                 return l_dis_ori, l_cla_ori, l_rec_ori

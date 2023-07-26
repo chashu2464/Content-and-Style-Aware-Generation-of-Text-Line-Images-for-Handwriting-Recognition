@@ -9,8 +9,8 @@ from parameters import vocab,encoder,decoder
 CREATE_PAIRS = False
 from helper import equlize_lbl
 
-encoder = {data: i for i, data in enumerate(vocab)}
-decoder = {i: data for i, data in enumerate(vocab)}
+encoder = {data: i for i, data in enumerate(vocab,start=3)}
+decoder = {i: data for i, data in enumerate(vocab,start=3)}
 IMG_HEIGHT = 32 #64
 IMG_WIDTH = 80#216
 MAX_CHARS = 10
@@ -34,13 +34,15 @@ tar = 'Groundtruth/gan.iam.test.gt.filter27'
 def labelDictionary():
     labels = list(string.ascii_lowercase + string.ascii_uppercase)
     letter2index = {label: n for n, label in enumerate(labels)}
+    letter2index[" "]=len(letter2index)+1
     index2letter = {v: k for k, v in letter2index.items()}
-    return len(labels), letter2index, index2letter
+    index2letter[len(letter2index)+1]=[" "]
+    return len(letter2index), letter2index, index2letter
 
-num_classes, letter2index, index2letter = len(encoder),encoder,decoder
+num_classes, letter2index, index2letter = labelDictionary()
 tokens = {'GO_TOKEN': 0, 'END_TOKEN': 1, 'PAD_TOKEN': 2}
 num_tokens = len(tokens.keys())
-vocab_size = num_classes + num_tokens
+vocab_size = num_classes +4
 
 def edits1(word, min_len=2, max_len=MAX_CHARS):
     "All edits that are one edit away from `word`."

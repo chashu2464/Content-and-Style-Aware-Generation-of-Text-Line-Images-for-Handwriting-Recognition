@@ -6,8 +6,9 @@ from data_set import CustomImageDataset
 import matplotlib.pyplot as plt
 from loss import CER
 from collective_train import Collective_train
-from decoder import Decorder
-from encoder_vgg import Encoder
+
+from load_data import loadData as load_data_func
+
 from torch.utils.tensorboard import SummaryWriter
 
 # from models import Visual_encoder, TextEncoder_FC
@@ -38,7 +39,56 @@ OOV = True
 CurriculumModelID = 0
 writer = SummaryWriter(log_dir="Logs")
 
+def all_data_loader():
+    data_train, data_test = load_data_func(OOV)
+    
+    train_loader = torch.utils.data.DataLoader(data_train, collate_fn=sort_batch, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(data_test, collate_fn=sort_batch, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
+    return train_loader, test_loader
 
+
+def sort_batch(batch):
+    train_domain = list()
+    train_wid = list()
+    train_idx = list()
+    train_img = list()
+    train_img_width = list()
+    train_label = list()
+    img_xts = list()
+    label_xts = list()
+    label_xts_swap = list()
+    for domain, wid, idx, img, img_width, label, img_xt, label_xt, label_xt_swap in batch:
+        if wid >= NUM_WRITERS:
+            print('error!')
+        train_domain.append(domain)
+        train_wid.append(wid)
+        train_idx.append(idx)
+        train_img.append(img)
+        train_img_width.append(img_width)
+        train_label.append(label)
+        img_xts.append(img_xt)
+        label_xts.append(label_xt)
+        label_xts_swap.append(label_xt_swap)
+
+    train_domain = np.array(train_domain)
+    train_idx = np.array(train_idx)
+    train_wid = np.array(train_wid, dtype='int64')
+    train_img = np.array(train_img, dtype='float32')
+    train_img_width = np.array(train_img_width, dtype='int64')
+    train_label = np.array(train_label, dtype='int64')
+    img_xts = np.array(img_xts, dtype='float32')
+    label_xts = np.array(label_xts, dtype='int64')
+    label_xts_swap = np.array(label_xts_swap, dtype='int64')
+
+    train_wid = torch.from_numpy(train_wid)
+    train_img = torch.from_numpy(train_img)
+    train_img_width = torch.from_numpy(train_img_width)
+    train_label = torch.from_numpy(train_label)
+    img_xts = torch.from_numpy(img_xts)
+    label_xts = torch.from_numpy(label_xts)
+    label_xts_swap = torch.from_numpy(label_xts_swap)
+
+    return train_domain, train_wid, train_idx, train_img, train_img_width, train_label, img_xts, label_xts, label_xts_swap
 
 def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
 
@@ -73,13 +123,23 @@ def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
     loss_rec_tr = list()
     time_s = time.time()
 
-    for iter, train_data_list in enumerate(train_loader):
-        """Generator Image"""
+    for  itr,train_data_list in tqdm.tqdm(enumerate(train_loader)):
+        
         gen_opt.zero_grad()
 
         gen_loss = model(train_data_list, epoch, "gen_update")
         # print("Generator loss", gen_loss)
         gen_opt.step()
+
+        """rec update"""
+        rec_opt.zero_grad()
+
+        reg_loss = model(train_data_list, epoch, "rec_update")
+        # print("Writer loss-------------------------", writer_loss.item())
+        loss_rec_tr.append(reg_loss.item())
+        rec_opt.step()
+        """Generator Image"""
+       
         """dis update"""
         dis_opt.zero_grad()
 
@@ -89,24 +149,18 @@ def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
 
         dis_opt.step()
 
-        """rec update"""
-        rec_opt.zero_grad()
-
-        writer_loss = model(train_data_list, epoch, "cla_update")
-        # print("Writer loss-------------------------", writer_loss.item())
-        loss_rec_tr.append(writer_loss.item())
-        rec_opt.step()
+      
         """classifier update"""
         # print("going to the classifer")
         cla_opt.zero_grad()
 
-        reg_loss = model(train_data_list, epoch, "rec_update")
+        writer_loss = model(train_data_list, epoch, "cla_update")
         # print("cRecognizer Loss______________------------------", reg_loss)
-        loss_cla_tr.append(reg_loss.item())
+        loss_cla_tr.append(writer_loss.item())
         cla_opt.step()
 
         print(
-            f"Iteation={iter} --Times {time.time()-time_s}-----Generator Loss {gen_loss}--Writer loss{writer_loss} Discriminator Loss{dis_loss} Recognizaer Loss{reg_loss}"
+            f"Iteation={itr} --Times {time.time()-time_s}-----Generator Loss {gen_loss}--Writer loss{writer_loss} Discriminator Loss{dis_loss} Recognizaer Loss{reg_loss}"
         )
         loss_dis.append(dis_loss)
         loss_writer.append(writer_loss)
@@ -152,6 +206,19 @@ def main(train_loader, test_loader):
     model = Collective_train(
         num_writers=NUM_WRITERS, show_iter_num=show_iter_num
     ).to(device)
+   
+
+    if CurriculumModelID > 0:
+        model_file = 'save_weights/contran-' + str(CurriculumModelID) +'.model'
+        print('Loading ' + model_file)
+        model.load_state_dict(torch.load(model_file)) #load
+
+    # pretrain_dict = torch.load(model_file)
+    # model_dict = model.state_dict()
+    # pretrain_dict = {k: v for k, v in pretrain_dict.items() if k in model_dict and not k.startswith('gen.enc_text.fc')}
+    # model_dict.update(pretrain_dict)
+    # model.load_state_dict(model_dict)
+
     dis_params = list(model.discri.parameters())
     gen_params = list(model.generative.parameters())
     rec_params = list(model.recog.parameters())
@@ -165,60 +232,32 @@ def main(train_loader, test_loader):
     min_idx = 0
     min_count = 0
 
-    # if CurriculumModelID > 0:
-    #     model_file = 'save_weights/contran-' + str(CurriculumModelID) +'.model'
-    #     print('Loading ' + model_file)
-    #     model.load_state_dict(torch.load(model_file)) #load
-    # pretrain_dict = torch.load(model_file)
-    # model_dict = model.state_dict()
-    # pretrain_dict = {k: v for k, v in pretrain_dict.items() if k in model_dict and not k.startswith('gen.enc_text.fc')}
-    # model_dict.update(pretrain_dict)
-    # model.load_state_dict(model_dict)
-
-    # dis_params = list(model.discri.parameters())
-    # gen_params = list(model.generative.parameters())
-    # rec_params = list(model.recog.parameters())
-    # cla_params = list(model.writer_Model.parameters())
-    # dis_opt = optim.Adam([p for p in dis_params if p.requires_grad], lr=lr_dis)
-    # gen_opt = optim.Adam([p for p in gen_params if p.requires_grad], lr=lr_gen)
-    # rec_opt = optim.Adam([p for p in rec_params if p.requires_grad], lr=lr_rec)
-    # cla_opt = optim.Adam([p for p in cla_params if p.requires_grad], lr=lr_cla)
-    # epochs = 50001
-    # min_cer = 1e5
-    # min_idx = 0
-    # min_count = 0
-
     for epoch in range(CurriculumModelID, epochs):
+            cer = train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch)
 
-        if epoch % MODEL_SAVE_EPOCH == 0:
-            folder_weights = "save_weights"
-            if not os.path.exists(folder_weights):
-                os.makedirs(folder_weights)
-            torch.save(model.state_dict(), folder_weights + "/contran-%d.model" % epoch)
+            if epoch % MODEL_SAVE_EPOCH == 0:
+                folder_weights = 'weights'
+                if not os.path.exists(folder_weights):
+                    os.makedirs(folder_weights)
+                torch.save(model.state_dict(), folder_weights+'/contran-%d.model'%epoch)
 
-        if epoch % EVAL_EPOCH == 0:
-            test(test_loader, epoch, model)
+            if epoch % EVAL_EPOCH == 0:
+                test(test_loader, epoch, model)
 
-        if EARLY_STOP_EPOCH is not None:
-            if min_cer > cer:
-                min_cer = cer
-                min_idx = epoch
-                min_count = 0
-                rm_old_model(min_idx)
-            else:
-                min_count += 1
-                gen_loss,writer_loss,dis_loss,reg_loss= train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch)
-
-                writer.add_scalar("Generator loss", gen_loss, epoch)
-                writer.add_scalar("Writer loss", writer_loss, epoch)
-                writer.add_scalar("Discriminator loss", dis_loss, epoch)
-                writer.add_scalar("Recognizer loss", reg_loss, epoch)
-            if min_count >= EARLY_STOP_EPOCH:
-                print("Early stop at %d and the best epoch is %d" % (epoch, min_idx))
-                model_url = "save_weights/contran-" + str(min_idx) + ".model"
-                os.system("mv " + model_url + " " + model_url + ".bak")
-                os.system("rm save_weights/contran-*.model")
-                break
+            if EARLY_STOP_EPOCH is not None:
+                if min_cer > cer:
+                    min_cer = cer
+                    min_idx = epoch
+                    min_count = 0
+                    rm_old_model(min_idx)
+                else:
+                    min_count += 1
+                if min_count >= EARLY_STOP_EPOCH:
+                    print('Early stop at %d and the best epoch is %d' % (epoch, min_idx))
+                    model_url = 'weights/contran-'+str(min_idx)+'.model'
+                    os.system('mv '+model_url+' '+model_url+'.bak')
+                    os.system('rm weights/contran-*.model')
+                    break
 
 
 def rm_old_model(index):
@@ -243,29 +282,31 @@ if __name__ == "__main__":
     print("batch_size", batch_size)
     print("program is running using::", device)
     print(time.ctime())
-    TextDatasetObj = CustomImageDataset()
-    train_ratio = 0.8
-    test_ratio = 1 - train_ratio
+    # TextDatasetObj = CustomImageDataset()
+    # train_ratio = 0.8
+    # test_ratio = 1 - train_ratio
 
-    # Calculate the sizes of train and test sets based on the split ratios
-    train_size = int(train_ratio * len(TextDatasetObj))
-    test_size = len(TextDatasetObj) - train_size
+    # # Calculate the sizes of train and test sets based on the split ratios
+    # train_size = int(train_ratio * len(TextDatasetObj))
+    # test_size = len(TextDatasetObj) - train_size
 
-    # Split the dataset into train and test sets
-    train_set, test_set = random_split(TextDatasetObj, [train_size, test_size])
+    # # Split the dataset into train and test sets
+    # train_set, test_set = random_split(TextDatasetObj, [train_size, test_size])
 
-    # Define batch size and number of workers for DataLoader
-    num_workers = 0
+    # # Define batch size and number of workers for DataLoader
+    # num_workers = 0
 
-    # Create DataLoader instances for train and test sets
-    train_loader = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers)
-    test_loader = DataLoader(test_set, batch_size=batch_size, num_workers=num_workers)
+    # # Create DataLoader instances for train and test sets
+    # train_loader = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers)
+    # test_loader = DataLoader(test_set, batch_size=batch_size, num_workers=num_workers)
 
-    #check if data is being loaded properly 
-    if len(train_loader) | len(test_loader) == 0:
-        print("Data isn't loaded properly")
-    else:
-        print(f"{len(train_loader)=}     {len(test_loader)=}")
+    # #check if data is being loaded properly 
+    # if len(train_loader) | len(test_loader) == 0:
+    #     print("Data isn't loaded properly")
+    # else:
+    #     print(f"{len(train_loader)=}     {len(test_loader)=}")
+
+    train_loader, test_loader = all_data_loader()
 
     main(
         train_loader=train_loader, test_loader=test_loader,

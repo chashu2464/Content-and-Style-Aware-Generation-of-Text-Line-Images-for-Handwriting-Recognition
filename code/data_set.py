@@ -4,8 +4,8 @@ import torch
 import glob, os
 import json
 import xml.etree.cElementTree as ET
-from parameters import IMAGE_HEIGHT, IMAGE_WIDTH, device
-
+from load_data import IMG_HEIGHT, IMG_WIDTH
+from parameters import device
 
 class CustomImageDataset:
     def __init__(
@@ -28,10 +28,10 @@ class CustomImageDataset:
         img = imread(image_path, 0)
         img = 255 - img
         img_height, img_width = img.shape[0], img.shape[1]
-        n_repeats = int(np.ceil(IMAGE_WIDTH / img_width))
+        n_repeats = int(np.ceil(IMG_WIDTH / img_width))
         padded_image = np.concatenate([img] * n_repeats, axis=1)
-        padded_image = padded_image[:IMAGE_HEIGHT, :IMAGE_WIDTH]
-        resized_img = resize(padded_image, (IMAGE_WIDTH, IMAGE_HEIGHT))
+        padded_image = padded_image[:IMG_HEIGHT, :IMG_WIDTH]
+        resized_img = resize(padded_image, (IMG_WIDTH, IMG_HEIGHT))
         return (resized_img, label)
         # plt.imshow(img)
         # plt.show()

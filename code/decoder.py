@@ -1,15 +1,15 @@
 import torch
 from torch import nn
 from attention import MultiHeadAttention, MultiHead_CrossAttention
-
-from text_style import TextEncoder_FC
+from models import TextEncoder_FC
 from parameters import (
     embedding_size,
     text_max_len,
     batch_size,
     device,
     number_feature,
-    num_heads
+    Max_str
+    
 
 )
 from load_data import NUM_CHANNEL,IMG_HEIGHT,IMG_WIDTH
@@ -22,26 +22,26 @@ class Decorder(torch.nn.Module):
         self.dropout = dropout
         self.in_feature = in_feature
         self.out_feature = out_feature
-        self.TextStyle = TextEncoder_FC().to(device)
+        self.TextStyle = TextEncoder_FC(Max_str).to(device)
         self.in_feature = embedding_size *IMG_HEIGHT*IMG_WIDTH
 
         self.linear_upsampling = nn.Linear(
-            number_feature, self.in_feature
+            number_feature, input_feature
         )
         self.linear_downsampling = nn.Linear(
-            in_features=self.in_feature, out_features=self.out_feature
+            in_features=input_feature, out_features=self.out_feature
         )
-        self.upsample_norm=nn.Conv2d(batch_size*num_heads,NUM_CHANNEL*num_heads,1,1,)
+        ##self.upsample_norm=nn.Conv2d(batch_size*num_heads,NUM_CHANNEL*num_heads,1,1,)
 
         self.block_with_attention = LayerNormLinearDropoutBlock(
-            in_features=self.in_feature,
+            in_features=input_feature,
             out_features=self.out_feature,
             num_heads=2,
             dropout_prob=0.2,
             attention=True,
         )
         self.block_without_attention = LayerNormLinearDropoutBlock(
-            in_features=self.in_feature,
+            in_features=input_feature,
             out_features=self.out_feature,
             num_heads=2,
             dropout_prob=0.2,
@@ -57,11 +57,11 @@ class Decorder(torch.nn.Module):
         self.drop = nn.Dropout(self.dropout)
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, encoder_out, text_style_content=None):
+    def forward(self, encoder_out,text_style_content=None,img_shape=None,):
 
         # char_embedding= 2,5440 global_net=[2,64,10,100]  batch,output,H,W
+        char_embedding, global_net = self.TextStyle(text_style_content,img_shape)
 
-        char_embedding, global_net = self.TextStyle(text_style_content)
         char_upsampling = self.linear_upsampling(char_embedding)
         txt_style = global_net + char_upsampling.view(
             global_net.size(0),
@@ -72,6 +72,7 @@ class Decorder(torch.nn.Module):
         ## layer norm has the same shape are hte txt_style and global_net [2,64000]
         # attention_block=2,85
         print("in deco")
+
         attetion_block, layer_norm = self.block_with_attention(
             txt_style.reshape(txt_style.size(0), -1)
         )
@@ -82,15 +83,18 @@ class Decorder(torch.nn.Module):
 
         attention_norm = attetion_block + norm_down_sample
         block_without_attention, _ = self.block_without_attention(attention_norm)
+
         combained_without_attention = block_without_attention + attention_norm
 
         norm = self.norm(combained_without_attention)
 
-        upsample_norm=self.upsample_norm(norm.unsqueeze(1)).squeeze(1)
-        cross_attention = self.cross_attention(upsample_norm, encoder_out)
+        #upsample_norm=self.upsample_norm(norm.unsqueeze(1)).squeeze(1)
+        norm=norm.repeat(encoder_out.size(0)//norm.size(0),1)
+
+        cross_attention = self.cross_attention(norm, encoder_out)
         drop_out = self.drop(cross_attention)
         # norm = norm.repeat(drop_out.size(0) // (batch_size + batch_size), 1)
-        combained_without_attention = drop_out + upsample_norm
+        combained_without_attention = drop_out + norm
 
         block_without_attention2, _ = self.block_without_attention(
             combained_without_attention

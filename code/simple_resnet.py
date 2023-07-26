@@ -1,42 +1,100 @@
+
+import torch 
+import torch.nn.functional as F
+
 from torch import nn
-import torch
-from parameters import *
 
+class AdaptiveInstanceNorm2d(nn.Module):
+    def __init__(self, num_features, eps=1e-5, momentum=0.1):
+        super(AdaptiveInstanceNorm2d, self).__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.momentum = momentum
+        self.weight = None
+        self.bias = None
+        self.register_buffer("running_mean", torch.zeros(num_features))
+        self.register_buffer("running_var", torch.ones(num_features))
 
-class ResNET(nn.Module):
-    # see https://pytorch.org/docs/0.4.0/_modules/torchvision/models/resnet.html
-    def __init__(self, inplanes, planes, stride=1):
-        super(ResNET, self).__init__()
-        self.conv1 = nn.Conv2d(
-            inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False
+    def forward(self, x):
+        assert (
+            self.weight is not None and self.bias is not None
+        ), "Please assign AdaIN weight first"
+        b, c = x.size(0), x.size(1)
+        running_mean = self.running_mean.repeat(b)
+        running_var = self.running_var.repeat(b)
+        x_reshaped = x.contiguous().view(1, b * c, *x.size()[2:])
+        out = F.batch_norm(
+            x_reshaped,
+            running_mean,
+            running_var,
+            self.weight,
+            self.bias,
+            True,
+            self.momentum,
+            self.eps,
         )
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        return out.view(b, c, *x.size()[2:])
+
+    def __repr__(self):
+        return self.__class__.__name__ + "(" + str(self.num_features) + ")"
+
+
+class AdaLN(nn.Module):
+    def __init__(self, num_features, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+        self.num_features = num_features
+        self.rho = nn.Parameter(torch.Tensor(1, num_features, 1, 1))
+        self.gamma = nn.Parameter(torch.Tensor(1, num_features, 1, 1))
+        self.beta = nn.Parameter(torch.Tensor(1, num_features, 1, 1))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.constant_(self.rho, 0.9)
+        nn.init.constant_(self.gamma, 1.0)
+        nn.init.constant_(self.beta, 0.0)
 
     def forward(self, x):
-        residual = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out += residual
-        out = self.relu(out)
-        return out
+        mean = torch.mean(x, dim=[2, 3], keepdim=True)
+        var = torch.var(x, dim=[2, 3], keepdim=True)
+        x = (x - mean) / torch.sqrt(var + self.eps)
+        return self.gamma * x + self.beta
+
+    def __repr__(self):
+        return self.__class__.__name__ + "(" + str(self.num_features) + ")"
 
 
-class ResBlocks(nn.Module):
-    def __init__(self, num_blocks, in_dim, out_dim):
-        super(ResBlocks, self).__init__()
-        self.model = []
-        for i in range(num_blocks):
-            self.model += [ResNET(in_dim, out_dim,)]
-        self.model = nn.Sequential(*self.model)
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.leaky_relu = nn.LeakyReLU(0.1, inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.adaln = AdaLN(out_channels)  # Assuming you have defined AdaLN separately
+
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
 
     def forward(self, x):
-        return self.model(x)
+        residual = self.shortcut(x)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.leaky_relu(x)
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.adaln(x)
+
+        x += residual
+        x = self.leaky_relu(x)
+        return x
+    
 
 def write_image(xg, pred_label, gt_img, gt_label, tr_imgs, xg_swap, pred_label_swap, gt_label_swap, title, num_tr=2):
     folder = 'imgs'
